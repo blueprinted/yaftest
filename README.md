@@ -1,5 +1,5 @@
 # yaftest
-用于测试yaf框架的安装与部署
+用于测试yaf框架的安装与部署；测试多模块，测试项目位于根目录及二级目录nginx配置的写法。
 
     安装yaf
     在GitHub找yaf项目下载最新版 yaf项目("yaf主分支源码")
@@ -345,3 +345,97 @@ Hello World! I am phper
         }
 ```
 做跟之前一样的URL访问，输出也是正常且一样的。
+    
+    以上实现了nginx下yaf框架部署在根目录的多模块功能。
+    如果将yaf框架部署在二级目录，因为根目录的业务可能是用其他框架来写的或者根本没有用框架，nginx应该怎样配置才能实现？
+    
+    比如将nginx的根目录改成这样
+```shell
+localhost:1.14.0 blueprinted$ pwd
+/usr/local/Cellar/nginx-full/1.14.0
+localhost:1.14.0 blueprinted$ ll 
+total 600
+-rw-r--r--  1 blueprinted  admin  286953  4 17 23:22 CHANGES
+-rw-r--r--  1 blueprinted  admin    2851  9 11 02:28 INSTALL_RECEIPT.json
+-rw-r--r--  1 blueprinted  admin    1397  4 17 23:22 LICENSE
+-rw-r--r--  1 blueprinted  admin      49  4 17 23:22 README
+drwxr-xr-x  3 blueprinted  admin      96  9 11 02:28 bin
+-rw-r--r--  1 blueprinted  admin     581  9 11 02:28 homebrew.mxcl.nginx-full.plist
+lrwxr-xr-x  1 blueprinted  admin      33  9 14 01:40 html -> /Users/blueprinted/Public/webtest
+lrwxr-xr-x  1 blueprinted  admin      14  9 13 23:45 logs -> /var/log/nginx
+lrwxr-xr-x  1 blueprinted  admin      14  9 13 23:46 run -> /var/run/nginx
+drwxr-xr-x  3 blueprinted  admin      96  9 11 02:28 share
+localhost:1.14.0 blueprinted$ 
+```
+    yaf项目的目录结构保持不变，也不改动nginx的配置文件。
+/usr/local/etc/nginx/servers/default.conf 的 location / {} 段内容
+```shell
+location / {
+            root   html;
+            index  index.html index.htm index.php;
+            include mime.types;
+            autoindex on;
+            autoindex_exact_size off;
+            if (!-e $request_filename) {
+                rewrite ^/(.*)  /index.php last;
+            }
+            #try_files $uri $uri/ /index.php?$query_string;
+        }
+```
+
+浏览器访问：http://localhost/
+页面输出
+```html
+Index of /
+../
+application/                                       13-Sep-2018 16:55       -
+conf/                                              12-Sep-2018 06:01       -
+public/                                            13-Sep-2018 17:39       -
+```
+
+浏览器访问：http://localhost/public/
+页面输出
+```html
+$get=default value
+Hello World! I am Stranger
+```
+
+浏览器访问：http://localhost/public/?get=iamget
+页面输出
+```html
+$get=iamget
+Hello World! I am Stranger
+```
+
+浏览器访问：http://localhost/public/index
+页面输出(状态码是404)
+```html
+File not found.
+```
+查看nginx的报错信息：
+```shell
+2018/09/14 02:08:24 [error] 33574#0: *1 FastCGI sent in stderr: "Primary script unknown" while reading response header from upstream, client: 127.0.0.1, server: 127.0.0.1, request: "GET /public/index HTTP/1.1", upstream: "fastcgi://127.0.0.1:9000", host: "localhost"
+```
+从nginx的报错信息来看，http://localhost/public/index 这个请求最终命中到了 location ~ \.php$ {...} 这一段，并且nginx已经将这个请求反向代理（或称转发）到127.0.0.1:9000端口了，也就是php-fpm监听的端口，但是php-fpm没有找到对应的php文件，报出了404。
+
+分析一下 location 的流程走向：
+URI: /public/index
+如果有正则location且能命中到则会进入正则的location{}段，很显然没有命中到 location ~ \.php$ {...} 这一段；
+首先会进入 location / {...} 段，命中到 if (!-e $request_filename) {rewrite ^/(.*)  /index.php last;} 这一段，nginx内会做请求重定向，重定向到的文件是 /index.php 然后重新进入 server{} 段，但是浏览器地址栏的地址不会变。
+重新进入 server{}段之后，正则优先原则命中到了 location ~ \.php$ {...} 这一段，于是nginx将请求转发给 127.0.0.1:9000，这正好是php-fpm监听的端口，php-fpm去找这个文件，发现找不到，于是报出了404
+
+将/usr/local/etc/nginx/servers/default.conf location / {} 段的配置改成这样
+```shell
+location / {
+            root   html;
+            index  index.html index.htm index.php;
+            include mime.types;
+            autoindex on;
+            autoindex_exact_size off;
+            #if (!-e $request_filename) {
+            #    rewrite ^/(.*)  /index.php last;
+            #}
+            try_files $uri $uri/ /index.php?$query_string;
+        }
+```
+做跟之前一样的访问，结果与输出是一样的。
