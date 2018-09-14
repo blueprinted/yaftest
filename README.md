@@ -347,6 +347,7 @@ Hello World! I am phper
 做跟之前一样的URL访问，输出也是正常且一样的。
     
     以上实现了nginx下yaf框架部署在根目录的多模块功能。
+    
     如果将yaf框架部署在二级目录，因为根目录的业务可能是用其他框架来写的或者根本没有用框架，nginx应该怎样配置才能实现？
     
     比如将nginx的根目录改成这样
@@ -426,7 +427,7 @@ URI: /public/index
 
 将/usr/local/etc/nginx/servers/default.conf location / {} 段的配置改成这样
 ```shell
-location / {
+        location / {
             root   html;
             index  index.html index.htm index.php;
             include mime.types;
@@ -438,4 +439,245 @@ location / {
             try_files $uri $uri/ /index.php?$query_string;
         }
 ```
-做跟之前一样的访问，结果与输出是一样的。
+做跟之前一样的访问
+
+浏览器访问：http://localhost/
+页面输出
+```html
+Index of /
+../
+application/                                       13-Sep-2018 16:55       -
+conf/                                              12-Sep-2018 06:01       -
+public/                                            13-Sep-2018 17:39       -
+```
+
+浏览器访问：http://localhost/public/
+页面输出
+```html
+$get=default value
+Hello World! I am Stranger
+```
+
+浏览器访问：http://localhost/public/?get=iamget
+页面输出
+```html
+$get=iamget
+Hello World! I am Stranger
+```
+
+浏览器访问：http://localhost/public/index
+页面输出(状态码是404)
+```html
+File not found.
+```
+查看nginx的报错信息：
+```shell
+127.0.0.1 - - [15/Sep/2018:03:08:08 +0800] "GET /public/index HTTP/1.1" 404 27 "-" "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_13_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/67.0.3396.99 Safari/537.36" "-"
+```
+注意，虽然都是报的404，但这个404的nginx报错信息，与上一个404的nginx报错信息是不一样的。上一个是请求rewrite后匹配到了 location ~ \.php$ {...} 这一段，从而是 php-fpm 报出来的404，而这个404报错，是nginx报出来的，并没有命中到 location ~ \.php$ {...} 段。
+从这可以看出 rewrite 与 try_files 的区别：
+```shell
+rewrite ^/(.*)  /index.php last;                      不会先检查 /index.php 是否存在，直接重定向
+try_files $uri $uri/ /index.php?$query_string;        fallback到 /index.php 时，会检查一遍 index.php 是否存在，不存在则直接由nginx报404，存在则会去重定向。
+```
+
+可以验证一下这个结论：
+在 /Users/blueprinted/Public/webtest 目录下增加一个 index.php 文件：
+```php
+<?php
+echo "this is /Users/blueprinted/Public/webtest/index.php";
+
+```
+显然这个文件与 public 目录平级
+然后，浏览器访问：http://localhost/public/index
+页面输出(状态码是200)
+```html
+this is /Users/blueprinted/Public/webtest/index.php
+```
+因此，结论无误。
+
+从以上来看，想要把yaf框架入口文件（index.php）部署到二级目录，增加一段 location /public {...} 或许可以解决问题，下面开始尝试
+
+更改配置文件 /usr/local/etc/nginx/servers/default.conf 改动 location / {} 增加一段 location /public {...}
+```shell
+      location / {
+            root   html;
+            index  index.html index.htm index.php;
+            include mime.types;
+            autoindex on;
+            autoindex_exact_size off;
+            #if (!-e $request_filename) {
+            #    rewrite ^/(.*)  /index.php last;
+            #}
+            #try_files $uri $uri/ /index.php?$query_string;
+        }
+
+        location /public {
+            root   html;
+            index  index.html index.htm index.php;
+            include mime.types;
+            try_files $uri $uri/ /public/index.php?$query_string;
+        }
+```
+重启nginx 重新访问
+
+浏览器访问：http://localhost/public/index/index/index/name/phper?get=iamget
+页面输出
+```html
+$get=iamget
+Hello World! I am phper
+```
+
+浏览器访问：http://localhost/public/guahao/index/index/name/phper?get=iamget
+页面输出
+```html
+$get=iamget
+Hello World! I am phper
+```
+
+再更改配置文件 /usr/local/etc/nginx/servers/default.conf 不动 location / {} 更改 location /public {...}
+```shell
+        location / {
+            root   html;
+            index  index.html index.htm index.php;
+            include mime.types;
+            autoindex on;
+            autoindex_exact_size off;
+            #if (!-e $request_filename) {
+            #    rewrite ^/(.*)  /index.php last;
+            #}
+            #try_files $uri $uri/ /index.php?$query_string;
+        }
+
+        location /public {
+            root   html;
+            index  index.html index.htm index.php;
+            include mime.types;
+            if (!-e $request_filename) {
+                rewrite ^/(.*)  /public/index.php last;
+            }
+        }
+```
+重启nginx 重新访问(正常，与之前一样)
+
+浏览器访问：http://localhost/public/index/index/index/name/phper?get=iamget
+页面输出
+```html
+$get=iamget
+Hello World! I am phper
+```
+
+浏览器访问：http://localhost/public/guahao/index/index/name/phper?get=iamget
+页面输出
+```html
+$get=iamget
+Hello World! I am phper
+```
+至此，yaf框架放在二级目录也可以实现，目录结构为：
+```
+localhost:webtest blueprinted$ pwd
+/Users/blueprinted/Public/webtest     ##这个是nginx的根目录
+localhost:webtest blueprinted$ tree -L 2
+.
+├── application
+│   ├── Bootstrap.php
+│   ├── controllers
+│   ├── models
+│   ├── modules
+│   ├── plugins
+│   └── views
+├── conf
+│   └── application.ini
+└── public
+    └── index.php
+
+8 directories, 3 files
+localhost:webtest blueprinted$ 
+```
+但实际上这种目录结构还存在问题，多数框架文件或目录位于了web根目录，占用了根目录的资源。下面将目录结构进行调整：
+```
+localhost:webtest blueprinted$ tree -L 2
+.
+└── public
+    ├── application
+    ├── conf
+    └── index.php
+
+3 directories, 1 file
+localhost:webtest blueprinted$  
+```
+
+调整一下index.php的内容，由
+```php
+<?php
+  
+define('APP_PATH', dirname(__DIR__));
+
+$application = new Yaf\Application(APP_PATH . "/conf/application.ini");
+
+$application->bootstrap()->run();
+```
+更改为
+```php
+<?php
+  
+define('APP_PATH', __DIR__);
+
+$application = new Yaf\Application(APP_PATH . "/conf/application.ini");
+
+$application->bootstrap()->run();
+```
+
+不需要更改 nginx 配置，所以不需要重启nginx，然后进行访问测试
+
+浏览器访问：http://localhost/public/index/index/index/name/phper?get=iamget
+页面输出
+```html
+$get=iamget
+Hello World! I am phper
+```
+
+浏览器访问：http://localhost/public/guahao/index/index/name/phper?get=iamget
+页面输出
+```html
+$get=iamget
+Hello World! I am phper
+```
+再调整一下 /usr/local/etc/nginx/servers/default.conf ，由
+```shell
+        location /public {
+            root   html;
+            index  index.html index.htm index.php;
+            include mime.types;
+            if (!-e $request_filename) {
+                rewrite ^/(.*)  /public/index.php last;
+            }
+        }
+```
+更改为
+```shell
+        location /public {
+            root   html;
+            index  index.html index.htm index.php;
+            include mime.types;
+            try_files $uri $uri/ /public/index.php?$query_string;
+        }
+```
+
+重启nginx，重新访问
+
+浏览器访问：http://localhost/public/index/index/index/name/phper?get=iamget
+页面输出
+```html
+$get=iamget
+Hello World! I am phper
+```
+
+浏览器访问：http://localhost/public/guahao/index/index/name/phper?get=iamget
+页面输出
+```html
+$get=iamget
+Hello World! I am phper
+```
+
+一切正常，至此将yaf框架部署到二级目录也可以实现。
