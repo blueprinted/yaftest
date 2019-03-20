@@ -3,7 +3,7 @@
 
     安装yaf
     在GitHub找yaf项目下载最新版 yaf项目("yaf主分支源码")
-    在PECL官网找了最新版yaf-3.0.7.tgz，如果不会，请参看官网的安装[yaf官网](http://www.laruence.com/manual/ "yaf官网")
+    在PECL官网找了最新版[yaf-3.0.7.tgz](http://pecl.php.net/package/yaf)，如果不会，请参看官网的安装[yaf官网](http://www.laruence.com/manual/ "yaf官网")
 ```shell
 ##phpize 与 php-config需要根据自己的机器来确定路径
 ##make完后可以执行 make test 用于测试是否存在bug导致不能改正常使用，但基本上很少会执行 make test 这里我也省略了 make test
